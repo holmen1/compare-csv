@@ -1,4 +1,4 @@
-# Compare DataFrames
+# Compare CSV files
 # Author: Mats Holm
 import sys
 import numpy as np
@@ -18,13 +18,40 @@ class Comparator:
      parameter to account for minor differences in floating point values.
      """
 
-    def __init__(self, file1, file2, tol=1e-4):
+    def __init__(self, file1, file2, result, tol=1e-4):
         try:
             self.df_master = pd.read_csv(file1, index_col=0)
             self.df_sample = pd.read_csv(file2, index_col=0)
         except Exception as e:
             print(e)
             sys.exit(1)
+
+        values = self.values(tol)
+        strings = self.strings()
+        columns = self.columns()
+        index = self.index()
+
+        if not any([len(values), len(strings), len(columns), len(index)]):
+            id_str = f"Files {file1} and {file2} are identical within tol={tol}"
+            print(id_str)
+        else:
+            print(f"Files {file1} and {file2} have differences")
+
+            if  len(values):
+                print(f"Number of value differences: {len(values)}")
+                values.to_csv(result + '/diff_values.csv')
+            if  len(strings):
+                print(f"Number of string differences: {len(strings)}")
+                strings.to_csv(result + '/diff_strings.csv')
+            if  len(columns):
+                print(f"Number of column differences: {len(columns)}")
+                columns.to_csv(result + '/diff_columns.csv')
+            if  len(index):
+                print(f"Number of index differences: {len(index)}")
+                index.to_csv(result + '/diff_index.csv')
+            print(f"See {result}/ for details")
+
+        self.diffs = (values, strings, columns, index)
 
     def strings(self):
         return self.__compare(self.df_master, self.df_sample, dtype=object)
