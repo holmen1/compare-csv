@@ -36,19 +36,12 @@ class Comparator:
             print(id_str)
         else:
             print(f"Files {file1} and {file2} have differences")
-
-            if  len(values):
-                print(f"Number of value differences: {len(values)}")
-                values.to_csv(result + '/diff_values.csv')
-            if  len(strings):
-                print(f"Number of string differences: {len(strings)}")
-                strings.to_csv(result + '/diff_strings.csv')
-            if  len(columns):
-                print(f"Number of column differences: {len(columns)}")
-                columns.to_csv(result + '/diff_columns.csv')
-            if  len(index):
-                print(f"Number of index differences: {len(index)}")
-                index.to_csv(result + '/diff_index.csv')
+            for name in ['values', 'strings', 'columns', 'index']:
+                if len(eval(name)):
+                    print(f"Number of {name} differences: {len(eval(name))}")
+                    eval(name).to_csv(result + '/diff_' + name + '.csv')
+                    if name == 'values':
+                        self.diff_files(self.df_master, self.df_sample, tol).to_csv(result + '/diff_master.csv')
             print(f"See {result}/ for details")
 
         self.diffs = (values, strings, columns, index)
@@ -130,3 +123,20 @@ class Comparator:
         df_index.rename_axis(index=['index'], inplace=True)
 
         return df_index
+
+    @staticmethod
+    def diff_files(df_master, df_sample, tol):
+        numerical_columns = df_master[df_master.columns.intersection(df_sample.columns)].select_dtypes(
+            include=np.number).columns
+
+        # Set values to 99 where indices missing in sample
+        df_numerical_diff = (df_sample.loc[df_master.index.isin(df_sample.index)][numerical_columns] - df_master[
+            numerical_columns]).fillna(-99)
+        diff_mask = np.abs(df_numerical_diff) > tol
+
+        deleted_columns = df_master.columns.difference(df_sample.columns)
+        df_master[deleted_columns] = -df_master[deleted_columns]
+        df_master[numerical_columns] = df_numerical_diff
+        df_master[~diff_mask] = 0
+
+        return df_master
