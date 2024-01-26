@@ -1,0 +1,5 @@
+index,status
+"(3, 'first')",deleted
+"(3, 'second')",deleted
+"(4, 'first')",added
+"(4, 'second')",added

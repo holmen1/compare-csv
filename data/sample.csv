@@ -1,5 +1,7 @@
-ID,name,value1,value2, value5
-1,first,0.001,0.00202, 2
-2,second,0.004,0.004, 2
-3,fizt,0.005,0.006, 2
-7,fizt,0.005,0.006, 2
+ID,name1,name2,value1,value2,value5
+1,first,hej,0.001,0.0002,2
+1,second,helo,0.00303,0.004,2
+2,first,goddag,0.006,0.006,2
+2,second,bonjour,0.007,0.008,2
+4,first,hej,0.009,0.010,2
+4,second,hello,0.011,0.012,2
