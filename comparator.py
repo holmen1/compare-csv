@@ -18,33 +18,33 @@ class Comparator:
      parameter to account for minor differences in floating point values.
      """
 
-    def __init__(self, file1, file2, result, tol=1e-4):
+    def __init__(self, file1, file2, result, keys, tol=1e-4):
         try:
-            self.df_master = pd.read_csv(file1, index_col=0)
-            self.df_sample = pd.read_csv(file2, index_col=0)
+            self.df_master = pd.read_csv(file1, index_col=keys)
+            self.df_sample = pd.read_csv(file2, index_col=keys)
         except Exception as e:
             print(e)
             sys.exit(1)
 
+        self.tol = tol
+        self.columns = self.columns()
+        self.indices = self.indices()
         values = self.values(tol)
         strings = self.strings()
-        columns = self.columns()
-        index = self.index()
 
-        if not any([len(values), len(strings), len(columns), len(index)]):
-            id_str = f"Files {file1} and {file2} are identical within tol={tol}"
-            print(id_str)
+        if not any([len(values), len(strings), len(self.columns), len(self.indices)]):
+            print(f"Files {file1} and {file2} are identical within tol={tol}")
         else:
             print(f"Files {file1} and {file2} have differences")
-            for name in ['values', 'strings', 'columns', 'index']:
+            for name in ['values', 'strings', 'self.columns', 'self.indices']:
                 if len(eval(name)):
                     print(f"Number of {name} differences: {len(eval(name))}")
                     eval(name).to_csv(result + '/diff_' + name + '.csv')
                     if name == 'values':
-                        self.diff_files(self.df_master, self.df_sample, tol).to_csv(result + '/diff_master.csv')
+                        self.diff_files().to_csv(result + '/diff_master.csv')
             print(f"See {result}/ for details")
 
-        self.diffs = (values, strings, columns, index)
+        self.diffs = (values, strings, self.columns, self.indices)
 
     def strings(self):
         return self.__compare(self.df_master, self.df_sample, dtype=object)
@@ -55,7 +55,7 @@ class Comparator:
     def columns(self):
         return self.__compare_columns(self.df_master, self.df_sample)
 
-    def index(self):
+    def indices(self):
         return self.__compare_index(self.df_master, self.df_sample)
 
     def __compare(self, df_master, df_sample, dtype, tol=None):
@@ -66,14 +66,14 @@ class Comparator:
         df2 = df2.drop(df_sample.index.difference(df_master.index))
 
         if dtype != np.number:
-            df_compare = df1.select_dtypes(exclude=np.number).compare(df2.select_dtypes(exclude=np.number),
-                                                                      align_axis=0,
-                                                                      keep_shape=False,
-                                                                      result_names=('master', 'sample'))
+            df1_sorted = df1.select_dtypes(exclude=np.number).sort_index()
+            df2_sorted = df2.select_dtypes(exclude=np.number).sort_index()
+            df_compare = df1_sorted.compare(df2_sorted, align_axis=0, keep_shape=False,
+                                            result_names=('master', 'sample'))
         else:
             numerical_columns = df1.select_dtypes(include=np.number).columns
             df_numerical_diff = np.abs(df2[numerical_columns] - df1[numerical_columns])
-            diff_index = df_numerical_diff[(df_numerical_diff > tol).any(axis=1)].index
+            diff_index = df_numerical_diff[(df_numerical_diff > tol).any(axis=1)].index.unique()
 
             df_numerical = df1.loc[diff_index][numerical_columns].compare(df2.loc[diff_index][numerical_columns],
                                                                           align_axis=0,
@@ -87,8 +87,8 @@ class Comparator:
 
             df_compare = df_labels.merge(df_numerical, how='left', left_index=True, right_index=True)
 
-        df_result = df_compare.rename_axis(index=['ID', 'source'])
-        return df_result
+        df_compare.index.set_names('source', level=-1, inplace=True)
+        return df_compare
 
     def __compare_columns(self, df_master, df_sample):
         df_columns_deleted = df_master.columns.difference(df_sample.columns)
@@ -108,13 +108,13 @@ class Comparator:
         return df_columns
 
     def __compare_index(self, df_master, df_sample):
-        df_index_deleted = pd.Series(df_master.index.difference(df_sample.index), name='index')
-        df_index_deleted = df_index_deleted.to_frame()
+        df_index_deleted = df_master.index.difference(df_sample.index)
+        df_index_deleted = pd.DataFrame(df_index_deleted, columns=['index'])
         df_index_deleted['status'] = 'deleted'
         df_index_deleted.set_index('index', inplace=True)
 
-        df_index_added = pd.Series(df_sample.index.difference(df_master.index), name='index')
-        df_index_added = df_index_added.to_frame()
+        df_index_added = df_sample.index.difference(df_master.index)
+        df_index_added = pd.DataFrame(df_index_added, columns=['index'])
         df_index_added['status'] = 'added'
         df_index_added.set_index('index', inplace=True)
 
@@ -124,19 +124,29 @@ class Comparator:
 
         return df_index
 
-    @staticmethod
-    def diff_files(df_master, df_sample, tol):
-        numerical_columns = df_master[df_master.columns.intersection(df_sample.columns)].select_dtypes(
-            include=np.number).columns
+    def diff_files(self):
+        nan_num = -99.99
 
-        # Set values to 99 where indices missing in sample
-        df_numerical_diff = (df_sample.loc[df_master.index.isin(df_sample.index)][numerical_columns] - df_master[
-            numerical_columns]).fillna(-99)
-        diff_mask = np.abs(df_numerical_diff) > tol
+        numerical_columns_master = self.df_master.select_dtypes(include=np.number).columns
+        numerical_columns_sample = self.df_sample.select_dtypes(include=np.number).columns
+        numerical_columns = numerical_columns_master.intersection(numerical_columns_sample)
 
-        deleted_columns = df_master.columns.difference(df_sample.columns)
-        df_master[deleted_columns] = -df_master[deleted_columns]
-        df_master[numerical_columns] = df_numerical_diff
-        df_master[~diff_mask] = 0
+        df_numerical_diff = (self.df_sample[numerical_columns] - self.df_master[numerical_columns]).fillna(nan_num)
+        diff_mask = np.abs(df_numerical_diff) > self.tol
 
-        return df_master
+        added_columns = numerical_columns_sample.intersection(self.columns[self.columns.status == 'added'].index)
+        deleted_columns = numerical_columns_master.intersection(self.columns[self.columns.status == 'deleted'].index)
+        deleted_indices = self.df_master.index.intersection(self.indices[self.indices == 'deleted'].index)
+
+        df_diff = self.df_master.copy()
+        df_diff[numerical_columns] = df_numerical_diff
+        df_diff[~diff_mask] = 0
+
+        if len(added_columns):
+            df_diff[added_columns] = self.df_sample[added_columns]
+            if len(deleted_indices): df_diff.loc[deleted_indices, added_columns] = nan_num
+        if len(deleted_columns):
+            df_diff[deleted_columns] = -df_diff[deleted_columns]
+            if len(deleted_indices): df_diff.loc[deleted_indices, deleted_columns] = nan_num
+
+        return df_diff
